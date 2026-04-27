@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  edge-ai-peak:
+    build: ./python
+    container_name: group25-edge-ai-peak
+    environment:
+      MQTT_HOST: "${MQTT_HOST:-localhost}"
+      MQTT_PORT: "${MQTT_PORT:-1883}"
+      GROUP_ID: "group25"
+      PROJECT_ID: "peak"
+      PUBLISH_INTERVAL: "${PUBLISH_INTERVAL:-5}"
+    restart: unless-stopped
