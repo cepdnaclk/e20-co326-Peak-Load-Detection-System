@@ -6,6 +6,7 @@
 #define LED_GREEN     15    // D15
 #define LED_YELLOW    16    // RX2
 #define LED_RED       17    // TX2
+#define BUTTON_PIN    18 
 
 // ---- ACS712 CONFIG ----
 #define ACS712_SENSITIVITY  0.185f
@@ -19,6 +20,9 @@
 #define WINDOW_SIZE         50
 #define ZSCORE_CUTOFF       2.5f
 #define RELAY_RESTORE_MS    8000
+#define BUTTON_RAMP_MAX     2.5f    // Max watts added at full press
+#define BUTTON_RAMP_STEP    0.15f   // Watts added per loop cycle (every 2s)
+#define BUTTON_DECAY_STEP   0.10f   // Watts removed per loop cycle on release 
 
 // ---- DEMO MODES ----
 // 0 = Auto (sensor-driven)
@@ -35,6 +39,7 @@ int     winCount    = 0;
 bool    relayOn     = true;
 unsigned long relayTripTime = 0;
 unsigned long lastPrintTime = 0;
+float   buttonRampW = 0.0f;   // current simulated load from button
 
 // ============================================================
 //  READ SENSOR
@@ -194,6 +199,7 @@ void setup() {
   pinMode(LED_GREEN,  OUTPUT);
   pinMode(LED_YELLOW, OUTPUT);
   pinMode(LED_RED,    OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
@@ -223,21 +229,27 @@ void loop() {
   float current = readCurrentAmps();
   float powerW  = calcPower(current);
 
-  // Apply demo offset if in demo mode
-  float displayPower = powerW + demoOffset;
+  // ---- BUTTON RAMP ----
+  bool buttonHeld = (digitalRead(BUTTON_PIN) == LOW);
+  if (buttonHeld) {
+    buttonRampW += BUTTON_RAMP_STEP;
+    if (buttonRampW > BUTTON_RAMP_MAX) buttonRampW = BUTTON_RAMP_MAX;
+  } else {
+    buttonRampW -= BUTTON_DECAY_STEP;
+    if (buttonRampW < 0.0f) buttonRampW = 0.0f;
+  }
+  powerW += buttonRampW;
 
-  // In forced modes, skip auto relay logic
+  float displayPower = powerW + demoOffset;
   bool  isPeak  = false;
   String status;
 
   if (demoMode == 1) {
-    // Force NORMAL
     isPeak = false;
     status = "NORMAL (demo)";
     updateLEDs(0.0f, false);
 
   } else if (demoMode == 2) {
-    // Force WARNING
     isPeak = false;
     status = "WARNING (demo)";
     digitalWrite(LED_GREEN,  LOW);
@@ -245,7 +257,6 @@ void loop() {
     digitalWrite(LED_RED,    LOW);
 
   } else if (demoMode == 3) {
-    // Force PEAK
     isPeak = true;
     status = "PEAK DETECTED (demo)";
     updateLEDs(displayPower, true);
@@ -255,7 +266,7 @@ void loop() {
     }
 
   } else {
-    // AUTO mode — real sensor
+    // AUTO mode — real sensor + button
     status = detectPeak(displayPower, isPeak);
     updateLEDs(displayPower, isPeak);
 
@@ -274,16 +285,26 @@ void loop() {
 
   // Print readings
   Serial.println("--------------------------------------------");
-  Serial.print  ("  Mode    : ");
-  switch(demoMode) {
-    case 0: Serial.println("AUTO (sensor)"); break;
-    case 1: Serial.println("DEMO - NORMAL"); break;
-    case 2: Serial.println("DEMO - WARNING"); break;
-    case 3: Serial.println("DEMO - PEAK"); break;
-  }
+  Serial.print  ("  Button  : ");
+  Serial.println(buttonHeld ? "HELD" : "open");
+  Serial.print  ("  Ramp    : "); Serial.print(buttonRampW, 2); Serial.println(" W added");
   Serial.print  ("  Power   : "); Serial.print(displayPower, 3); Serial.println(" W");
-  Serial.print  ("  Current : "); Serial.print(current, 3);      Serial.println(" A (real)");
+  Serial.print  ("  Current : "); Serial.print(current, 3);      Serial.println(" A");
   Serial.print  ("  Status  : "); Serial.println(status);
   Serial.print  ("  Relay   : "); Serial.println(relayOn ? "ON  (fan running)" : "OFF (fan stopped)");
   Serial.println("--------------------------------------------");
+  
+  // Parseable JSON output for Python reader
+  Serial.print("[POWER] Power: ");
+  Serial.print(displayPower, 2);
+  Serial.print(" W | State: ");
+  if (isPeak) {
+    Serial.print("PEAK");
+  } else if (displayPower > PEAK_THRESHOLD_W * 0.75f) {
+    Serial.print("WARNING");
+  } else {
+    Serial.print("NORMAL");
+  }
+  Serial.print(" | Relay: ");
+  Serial.println(relayOn ? "ON" : "OFF");
 }
