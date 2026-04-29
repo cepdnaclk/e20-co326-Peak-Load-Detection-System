@@ -10,7 +10,7 @@
     "id": "mqtt-broker-config",
     "type": "mqtt-broker",
     "name": "Course MQTT Broker",
-    "broker": "localhost",
+    "broker": "localhost", 
     "port": "1883",
     "clientid": "group25-nodered",
     "usetls": false,
