@@ -1,0 +1,10 @@
+version: '3.8'
+
+# Local development overrides: bind-mount code and run publisher for rapid testing
+services:
+  edge-ai:
+    volumes:
+      - ./python:/app:rw
+    command: python mqtt_publisher.py
+    environment:
+      MQTT_HOST: mqtt-broker

@@ -1,13 +1,107 @@
-version: "3.8"
+version: '3.8'
+
+# =============================================================
+#  Peak Load Detection System — Group 25
+#  CO326: Computer Systems Engineering — Industrial Networks
+#
+#  Three-Container Architecture:
+#    Container 1: Eclipse Mosquitto (MQTT Broker)
+#    Container 2: Python Edge AI Bridge
+#    Container 3: Node-RED Dashboard
+#
+#  Note on ESP32:
+#    The ESP32 is a physical device on the LAN. It must connect
+#    to the HOST machine IP (not the docker service name).
+#    Change MQTT_BROKER in main.cpp to your host IP before flashing.
+#    e.g. const char* MQTT_BROKER = "192.168.1.100";
+# =============================================================
 
 services:
-  edge-ai-peak:
-    build: ./python
-    container_name: group25-edge-ai-peak
-    environment:
-      MQTT_HOST: "${MQTT_HOST:-localhost}"
-      MQTT_PORT: "${MQTT_PORT:-1883}"
-      GROUP_ID: "group25"
-      PROJECT_ID: "peak"
-      PUBLISH_INTERVAL: "${PUBLISH_INTERVAL:-5}"
+
+  # ─────────────────────────────────────────────────────────
+  #  Container 1: Eclipse Mosquitto MQTT Broker
+  #  Replaces the public HiveMQ broker with a local one.
+  #  Exposes port 1883 to the host so the ESP32 can reach it.
+  # ─────────────────────────────────────────────────────────
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: group25-mqtt-broker
+    ports:
+      - "1883:1883"       # ESP32 and external clients connect here
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t \"health/check\" -m \"ping\" >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
+    networks:
+      - peak_net
+
+  # ─────────────────────────────────────────────────────────
+  #  Container 2: Python Edge AI Bridge
+  #  Subscribes to raw ESP32 sensor data, runs Z-score + 
+  #  threshold detection, publishes alerts and relay commands.
+  # ─────────────────────────────────────────────────────────
+  edge-ai:
+    build: ./python
+    container_name: group25-edge-ai
+    env_file:
+      - .env
+    environment:
+      MQTT_HOST: "${MQTT_HOST:-mqtt-broker}"          # Docker service name (internal DNS)
+      MQTT_PORT: "${MQTT_PORT:-1883}"
+      GROUP_ID: "${GROUP_ID:-group25}"
+      PROJECT_ID: "${PROJECT_ID:-peak}"
+      PEAK_THRESHOLD_W: "${PEAK_THRESHOLD_W:-1.5}"
+      WARNING_RATIO: "${WARNING_RATIO:-0.867}"
+      RELAY_RESTORE_DELAY_S: "${RELAY_RESTORE_DELAY_S:-8}"
+    depends_on:
+      - mqtt-broker
+    healthcheck:
+      test: ["CMD-SHELL", "python /app/healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - peak_net
+
+  # ─────────────────────────────────────────────────────────
+  #  Container 3: Node-RED Dashboard
+  #  Visualises real-time power, fan animation, chart,
+  #  alerts and manual relay controls.
+  # ─────────────────────────────────────────────────────────
+  node-red:
+    image: nodered/node-red:latest
+    container_name: group25-node-red
+    ports:
+      - "1880:1880"                   # Dashboard: http://localhost:1880/ui
+    volumes:
+      - ./node-red:/data              # Persists flows.json and settings
+    environment:
+      TZ: "Asia/Colombo"              # Local time for alert timestamps (UTC+5:30)
+    depends_on:
+      - mqtt-broker
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:1880/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - peak_net
+
+# ─────────────────────────────────────────────────────────────
+#  Internal docker network — containers talk to each other
+#  using service names (mqtt-broker, edge-ai, node-red)
+# ─────────────────────────────────────────────────────────────
+networks:
+  peak_net:
+    driver: bridge

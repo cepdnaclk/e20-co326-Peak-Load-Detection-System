@@ -1,211 +1,369 @@
 [
   {
-    "id": "peak-flow",
+    "id": "tab_group25",
     "type": "tab",
-    "label": "Peak Load Detection",
+    "label": "Peak Load Monitor  EGroup 25",
     "disabled": false,
-    "info": "Real-time monitoring of industrial peak load with fan control"
+    "info": ""
   },
   {
-    "id": "mqtt-broker-config",
+    "id": "mqtt_broker_cfg",
     "type": "mqtt-broker",
-    "name": "Course MQTT Broker",
-    "broker": "localhost",
+    "name": "HiveMQ Public",
+    "broker": "broker.hivemq.com",
     "port": "1883",
-    "clientid": "group25-nodered",
+    "clientid": "nodered-group25-dashboard",
     "usetls": false,
-    "compatmode": false,
     "keepalive": "60",
     "cleansession": true
   },
   {
-    "id": "ui-tab-main",
+    "id": "ui_tab_main",
     "type": "ui_tab",
-    "name": "Dashboard",
+    "name": "Peak Load Monitor",
     "icon": "dashboard",
-    "order": 1,
-    "disp": true
+    "order": 1
   },
   {
-    "id": "ui-group-realtime",
+    "id": "ui_grp_meter",
     "type": "ui_group",
-    "name": "Real-Time Monitor",
-    "tab": "ui-tab-main",
+    "name": "Real-Time Power Meter",
+    "tab": "ui_tab_main",
     "order": 1,
     "disp": true,
-    "width": "12",
-    "collapse": false
+    "width": "6"
   },
   {
-    "id": "ui-group-graph",
+    "id": "ui_grp_fan",
     "type": "ui_group",
-    "name": "Load History",
-    "tab": "ui-tab-main",
+    "name": "Fan Status",
+    "tab": "ui_tab_main",
     "order": 2,
     "disp": true,
-    "width": "12",
-    "collapse": false
+    "width": "6"
   },
   {
-    "id": "ui-group-alerts",
+    "id": "ui_grp_graph",
     "type": "ui_group",
-    "name": "Alerts & Status",
-    "tab": "ui-tab-main",
+    "name": "Real-Time Load Graph",
+    "tab": "ui_tab_main",
     "order": 3,
     "disp": true,
-    "width": "12",
-    "collapse": false
+    "width": "12"
   },
   {
-    "id": "mqtt-in-data",
+    "id": "ui_grp_alerts",
+    "type": "ui_group",
+    "name": "Alert Panel",
+    "tab": "ui_tab_main",
+    "order": 4,
+    "disp": true,
+    "width": "6"
+  },
+  {
+    "id": "ui_grp_ctrl",
+    "type": "ui_group",
+    "name": "Manual Relay Control",
+    "tab": "ui_tab_main",
+    "order": 5,
+    "disp": true,
+    "width": "6"
+  },
+  {
+    "id": "mqtt_in_data",
     "type": "mqtt in",
-    "z": "peak-flow",
-    "name": "Sensor Data Input",
+    "z": "tab_group25",
+    "name": "Processed Data",
     "topic": "sensors/group25/peak/data",
     "qos": "0",
     "datatype": "json",
-    "broker": "mqtt-broker-config",
-    "x": 140,
+    "broker": "mqtt_broker_cfg",
+    "x": 120,
     "y": 80,
-    "wires": [["fn-process-data"]]
+    "wires": [
+      [
+        "fn_route"
+      ]
+    ]
   },
   {
-    "id": "fn-process-data",
+    "id": "fn_route",
     "type": "function",
-    "z": "peak-flow",
-    "name": "Process Sensor Data",
-    "func": "let payload = msg.payload;\nlet processed = {\n  timestamp: payload.timestamp || new Date().toISOString(),\n  power_kw: parseFloat(payload.power_kw || 0),\n  power_w: parseFloat(payload.power_w || payload.power_kw * 1000 || 0),\n  state: payload.state || payload.mode || 'unknown',\n  is_peak: payload.is_peak || (payload.mode === 'peak')\n};\nlet gauge_msg = { payload: processed.power_w, topic: 'Power (W)' };\nlet chart_msg = { payload: { power_w: processed.power_w, state: processed.state, is_peak: processed.is_peak }, topic: 'chart' };\nlet status_msg = { payload: processed };\nlet fan_msg = { payload: processed.state === 'PEAK' ? '🔴 FAN OFF' : '🟢 FAN RUNNING' };\nreturn [gauge_msg, chart_msg, status_msg, fan_msg];",
-    "outputs": 4,
-    "noerr": 0,
-    "x": 380,
+    "z": "tab_group25",
+    "name": "Route & Enrich",
+    "func": "var d = msg.payload;\nif (typeof d === 'string') { try { d = JSON.parse(d); } catch(e) { return null; } }\n\nvar power   = parseFloat(d.power_w   || 0);\nvar current = parseFloat(d.current_a || 0);\nvar relayOn = (d.relay_on !== false && d.relay_on !== 'false');\nvar status  = d.status || 'NORMAL';\n\n// KEY FIX: If relay is OFF (tripped), dashboard shows TRIPPED\n// even if Python reports NORMAL (because power dropped after trip)\nvar displayStatus = status;\nif (!relayOn && status !== 'PEAK') {\n    displayStatus = 'TRIPPED';\n}\n\nvar enriched = {\n    power_w:       power,\n    current_a:     current,\n    voltage_v:     parseFloat(d.voltage_v || 5.0),\n    status:        status,\n    displayStatus: displayStatus,\n    relay_on:      relayOn,\n    timestamp:     d.timestamp || new Date().toISOString()\n};\n\n// Output 1: gauge (plain number)\nvar g = {payload: power};\n\n// Output 2: status text + fan (enriched object + displayStatus on msg)\nvar s = {payload: enriched, displayStatus: displayStatus};\n\n// Output 3: chart  Esend 3 series so threshold lines always visible\nvar chartPower   = {payload: power, topic: 'Power (W)'};\nvar chartPeak    = {payload: 1.5,   topic: 'Peak Threshold'};\nvar chartWarn    = {payload: 1.3, topic: 'Warning (1.3W)'};\n\nreturn [g, s, [chartPower, chartPeak, chartWarn]];\n",
+    "outputs": 3,
+    "x": 330,
     "y": 80,
-    "wires": [["ui-gauge-load"], ["ui-chart-load"], ["fn-color-status"], ["ui-template-fan"]]
+    "wires": [
+      [
+        "ui_gauge"
+      ],
+      [
+        "ui_status",
+        "ui_fan"
+      ],
+      [
+        "ui_chart"
+      ]
+    ]
   },
   {
-    "id": "ui-gauge-load",
+    "id": "ui_gauge",
     "type": "ui_gauge",
-    "z": "peak-flow",
-    "name": "Current Load",
-    "group": "ui-group-realtime",
+    "z": "tab_group25",
+    "name": "Power Gauge",
+    "group": "ui_grp_meter",
     "order": 1,
-    "width": "4",
+    "width": "6",
     "height": "4",
-    "label": "Current Load (W)",
-    "format": "{{value | number:2}}",
-    "min": "0",
-    "max": "5",
-    "seg1": "1.5",
-    "seg2": "3",
-    "x": 600,
+    "gtype": "gage",
+    "title": "Power Load (W)",
+    "label": "W",
+    "format": "{{value | number:3}}",
+    "min": 0,
+    "max": 5,
+    "colors": [
+      "#27ae60",
+      "#f39c12",
+      "#e74c3c"
+    ],
+    "seg1": 1.3,
+    "seg2": 1.5,
+    "x": 580,
     "y": 40,
     "wires": []
   },
   {
-    "id": "ui-template-fan",
+    "id": "ui_status",
     "type": "ui_template",
-    "z": "peak-flow",
-    "group": "ui-group-realtime",
-    "name": "Fan Animation",
+    "z": "tab_group25",
+    "name": "System Status",
+    "group": "ui_grp_meter",
     "order": 2,
-    "width": "4",
-    "height": "4",
-    "format": "<div style='display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 20px;'>\n  <svg id='fan-icon' width='80' height='80' viewBox='0 0 100 100' style='margin-bottom: 10px;'>\n    <!-- Fan blades -->\n    <g id='fan-blades'>\n      <ellipse cx='50' cy='30' rx='12' ry='20' fill='#FFD700' opacity='0.8'/>\n      <ellipse cx='70' cy='50' rx='20' ry='12' fill='#FFD700' opacity='0.8' transform='rotate(90 50 50)'/>\n      <ellipse cx='50' cy='70' rx='12' ry='20' fill='#FFD700' opacity='0.8' transform='rotate(180 50 50)'/>\n      <ellipse cx='30' cy='50' rx='20' ry='12' fill='#FFD700' opacity='0.8' transform='rotate(270 50 50)'/>\n    </g>\n    <!-- Fan center -->\n    <circle cx='50' cy='50' r='8' fill='#333'/>\n  </svg>\n  <div style='font-size: 18px; font-weight: bold; color: white; text-align: center;'>Fan Status</div>\n  <div id='fan-state' style='font-size: 24px; font-weight: bold; margin-top: 10px; color: #00FF00;'>🟢 RUNNING</div>\n</div>\n\n<style>\n  @keyframes spin-fast {\n    from { transform: rotate(0deg); }\n    to { transform: rotate(360deg); }\n  }\n  @keyframes spin-slow {\n    from { transform: rotate(0deg); }\n    to { transform: rotate(10deg); }\n  }\n  #fan-blades.running {\n    animation: spin-fast 0.6s linear infinite;\n  }\n  #fan-blades.stopped {\n    animation: spin-slow 2s ease-in-out infinite;\n  }\n</style>\n\n<script>\n  const fanIcon = document.getElementById('fan-blades');\n  const fanState = document.getElementById('fan-state');\n  \n  scope.$watch('msg.payload', function(newVal) {\n    if (newVal) {\n      if (newVal === '🟢 FAN RUNNING' || newVal === 'NORMAL') {\n        fanIcon.classList.remove('stopped');\n        fanIcon.classList.add('running');\n        fanState.textContent = '🟢 RUNNING';\n        fanState.style.color = '#00FF00';\n      } else {\n        fanIcon.classList.remove('running');\n        fanIcon.classList.add('stopped');\n        fanState.textContent = '🔴 STOPPED';\n        fanState.style.color = '#FF0000';\n      }\n    }\n  });\n</script>",
+    "width": "6",
+    "height": "2",
+    "format": "<div style=\"padding:10px;text-align:center;font-family:'Segoe UI',sans-serif;\">\n  <div ng-switch=\"msg.displayStatus\" style=\"font-size:1.7em;font-weight:bold;transition:color 0.4s;\">\n    <span ng-switch-when=\"PEAK\"    style=\"color:#e74c3c\">&#128308; PEAK DETECTED</span>\n    <span ng-switch-when=\"TRIPPED\" style=\"color:#e74c3c\">&#128308; RELAY TRIPPED</span>\n    <span ng-switch-when=\"WARNING\" style=\"color:#f39c12\">&#128993; WARNING</span>\n    <span ng-switch-default         style=\"color:#27ae60\">&#128994; NORMAL</span>\n  </div>\n  <div style=\"font-size:0.8em;color:#888;margin-top:4px;\">\n    {{msg.payload.power_w | number:3}} W &nbsp;|&nbsp; Relay: {{msg.payload.relay_on ? 'ON' : 'OFF'}}\n  </div>\n</div>",
     "storeOutMessages": true,
     "fwdInMessages": true,
     "resendOnRefresh": true,
     "templateScope": "local",
-    "x": 600,
+    "x": 590,
     "y": 100,
-    "wires": [[]]
+    "wires": [
+      []
+    ]
   },
   {
-    "id": "fn-color-status",
-    "type": "function",
-    "z": "peak-flow",
-    "name": "Status Color",
-    "func": "let state = msg.payload.state.toUpperCase();\nlet color = '#21ba45';\nlet display = '✓ NORMAL';\nif (state === 'PEAK') {\n  color = '#db2828';\n  display = '⚠ PEAK DETECTED';\n} else if (state === 'WARNING') {\n  color = '#fbbd08';\n  display = '⚡ WARNING';\n}\nmsg.payload = display;\nreturn msg;",
-    "outputs": 1,
-    "noerr": 0,
-    "x": 680,
+    "id": "ui_fan",
+    "type": "ui_template",
+    "z": "tab_group25",
+    "name": "Fan Animation",
+    "group": "ui_grp_fan",
+    "order": 1,
+    "width": "6",
+    "height": "6",
+    "format": "<style>\n  .fan-wrap{\n    display:flex;flex-direction:column;align-items:center;justify-content:center;\n    background:linear-gradient(135deg,#0f0c29,#302b63);\n    border-radius:16px;padding:20px;min-height:230px;\n    color:#fff;font-family:'Segoe UI',sans-serif;\n  }\n  @keyframes rotateFan{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}\n  .blades{transform-box:fill-box;transform-origin:center;}\n  .speed-slow{animation:rotateFan 2.2s linear infinite;}\n  .speed-med {animation:rotateFan 0.9s linear infinite;}\n  .speed-fast{animation:rotateFan 0.35s linear infinite;}\n  .blade-on {fill:#27ae60;}\n  .blade-on2{fill:#2ecc71;}\n  .blade-off{fill:#444;}\n  .badge{padding:5px 16px;border-radius:20px;font-size:0.85em;font-weight:bold;margin-top:10px;}\n  .b-on{background:#27ae60;}\n  .b-off{background:#e74c3c;}\n  .fan-stats{margin-top:10px;font-size:0.85em;color:#a0aec0;text-align:center;}\n</style>\n<div class=\"fan-wrap\" ng-if=\"msg\">\n  <svg width=\"130\" height=\"130\" viewBox=\"0 0 130 130\">\n    <circle cx=\"65\" cy=\"65\" r=\"60\" fill=\"rgba(255,255,255,0.04)\" stroke=\"rgba(255,255,255,0.08)\" stroke-width=\"1.5\"/>\n    <g class=\"blades\"\n       ng-class=\"{\n         'speed-slow': msg.payload.relay_on && msg.payload.power_w < 1.3,\n         'speed-med':  msg.payload.relay_on && msg.payload.power_w >= 1.3 && msg.payload.power_w < 1.5,\n         'speed-fast': msg.payload.relay_on && msg.payload.power_w >= 1.5\n       }\">\n      <path ng-class=\"msg.payload.relay_on ? 'blade-on' : 'blade-off'\"\n            d=\"M65,65 C57,52 48,32 65,22 C82,12 78,42 65,65 Z\" opacity=\"0.9\"/>\n      <path ng-class=\"msg.payload.relay_on ? 'blade-on2' : 'blade-off'\"\n            d=\"M65,65 C78,57 98,48 108,65 C118,82 88,78 65,65 Z\" opacity=\"0.9\"/>\n      <path ng-class=\"msg.payload.relay_on ? 'blade-on' : 'blade-off'\"\n            d=\"M65,65 C73,78 82,98 65,108 C48,118 52,88 65,65 Z\" opacity=\"0.9\"/>\n      <path ng-class=\"msg.payload.relay_on ? 'blade-on2' : 'blade-off'\"\n            d=\"M65,65 C52,73 32,82 22,65 C12,48 42,52 65,65 Z\" opacity=\"0.9\"/>\n    </g>\n    <circle cx=\"65\" cy=\"65\" r=\"11\" fill=\"#1a1a2e\"/>\n    <circle cx=\"65\" cy=\"65\" r=\"5\" fill=\"#999\"/>\n  </svg>\n  <span class=\"badge\" ng-class=\"msg.payload.relay_on ? 'b-on' : 'b-off'\">\n    {{msg.payload.relay_on ? '&#9679; RUNNING' : '&#9632; STOPPED'}}\n  </span>\n  <div class=\"fan-stats\">\n    Load: <strong>{{msg.payload.power_w | number:3}} W</strong>\n    &nbsp;|&nbsp;\n    Current: <strong>{{msg.payload.current_a | number:3}} A</strong>\n  </div>\n</div>\n<div class=\"fan-wrap\" ng-if=\"!msg\">\n  <span style=\"color:#555\">Waiting for data...</span>\n</div>",
+    "storeOutMessages": true,
+    "fwdInMessages": true,
+    "resendOnRefresh": true,
+    "templateScope": "local",
+    "x": 590,
     "y": 160,
-    "wires": [["ui-text-status"]]
+    "wires": [
+      []
+    ]
   },
   {
-    "id": "ui-text-status",
-    "type": "ui_text",
-    "z": "peak-flow",
-    "name": "Status Text",
-    "group": "ui-group-realtime",
-    "order": 3,
-    "width": "4",
-    "height": "4",
-    "label": "System Status",
-    "format": "{{msg.payload}}",
-    "x": 880,
-    "y": 160,
-    "wires": []
-  },
-  {
-    "id": "ui-chart-load",
+    "id": "ui_chart",
     "type": "ui_chart",
-    "z": "peak-flow",
-    "name": "Load Over Time",
-    "group": "ui-group-graph",
+    "z": "tab_group25",
+    "name": "Power Chart",
+    "group": "ui_grp_graph",
     "order": 1,
     "width": "12",
     "height": "6",
-    "label": "Power Load History (W)",
+    "label": "Power Load Over Time",
     "chartType": "line",
     "legend": "true",
     "xformat": "HH:mm:ss",
-    "ysingle": false,
-    "y1label": "Power (W)",
-    "y1min": "0",
-    "y1max": "5",
-    "removeOlder": 30,
-    "removeOlderUnit": "60",
-    "x": 600,
-    "y": 200,
-    "wires": [[], []]
+    "interpolate": "linear",
+    "nodata": "Waiting for ESP32 data...",
+    "dot": false,
+    "ymin": "0",
+    "ymax": "3",
+    "removeOlder": 2,
+    "removeOlderUnit": "3600",
+    "removeOlderPoints": "60",
+    "colors": [
+      "#27ae60",
+      "#e74c3c",
+      "#f39c12",
+      "#3498db",
+      "#9b59b6"
+    ],
+    "useOldColors": false,
+    "x": 590,
+    "y": 220,
+    "wires": [
+      []
+    ]
   },
   {
-    "id": "mqtt-in-alerts",
+    "id": "mqtt_in_alerts",
     "type": "mqtt in",
-    "z": "peak-flow",
-    "name": "Peak Alerts",
+    "z": "tab_group25",
+    "name": "Alerts",
     "topic": "alerts/group25/peak/status",
     "qos": "0",
     "datatype": "json",
-    "broker": "mqtt-broker-config",
-    "x": 140,
-    "y": 280,
-    "wires": [["fn-format-alert"]]
+    "broker": "mqtt_broker_cfg",
+    "x": 110,
+    "y": 340,
+    "wires": [
+      [
+        "fn_alert_format"
+      ]
+    ]
   },
   {
-    "id": "fn-format-alert",
+    "id": "fn_alert_format",
     "type": "function",
-    "z": "peak-flow",
+    "z": "tab_group25",
     "name": "Format Alert",
-    "func": "let p = msg.payload;\nlet power = (p.power_w || p.power_kw * 1000).toFixed(2);\nlet time = p.timestamp || new Date().toISOString();\nmsg.payload = '🔴 PEAK DETECTED\\n' + power + ' W @ ' + time;\nreturn msg;",
+    "func": "var d = msg.payload;\nif (typeof d === 'string') { try { d = JSON.parse(d); } catch(e) { return null; } }\n\nvar pw  = parseFloat(d.power_w || 0).toFixed(3);\nvar ts  = d.timestamp || new Date().toISOString();\nvar dt  = new Date(ts);\nvar pad = function(n){ return n < 10 ? '0'+n : ''+n; };\nvar months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];\nvar dateStr = pad(dt.getDate()) + ' ' + months[dt.getMonth()] + ' ' + dt.getFullYear();\nvar timeStr = pad(dt.getHours()) + ':' + pad(dt.getMinutes()) + ':' + pad(dt.getSeconds());\nvar fullTs  = dateStr + '  ' + timeStr;\n\nvar count = (global.get('peak_count') || 0) + 1;\nglobal.set('peak_count', count);\n\nmsg.alert_text  = 'PEAK at ' + pw + ' W';\nmsg.alert_time  = fullTs;\nmsg.alert_full  = 'PEAK at ' + pw + ' W  |  ' + fullTs;\nmsg.peak_count  = count;\nmsg.payload     = { power_w: pw, timestamp: fullTs, count: count };\nreturn msg;\n",
     "outputs": 1,
-    "noerr": 0,
-    "x": 380,
-    "y": 280,
-    "wires": [["ui-text-alert"]]
+    "x": 310,
+    "y": 340,
+    "wires": [
+      [
+        "ui_alert_panel"
+      ]
+    ]
   },
   {
-    "id": "ui-text-alert",
-    "type": "ui_text",
-    "z": "peak-flow",
-    "group": "ui-group-alerts",
+    "id": "ui_alert_panel",
+    "type": "ui_template",
+    "z": "tab_group25",
+    "name": "Alert Panel",
+    "group": "ui_grp_alerts",
     "order": 1,
-    "width": "12",
-    "height": "3",
-    "name": "Alert Display",
-    "label": "Latest Alert",
-    "format": "{{msg.payload}}",
-    "x": 630,
-    "y": 280,
+    "width": "6",
+    "height": "4",
+    "format": "<style>\n  .ab{border-radius:12px;padding:18px;transition:background 0.6s;font-family:'Segoe UI',sans-serif;min-height:80px;}\n  .ab-active{background:linear-gradient(135deg,#c0392b,#e74c3c);}\n  .ab-idle{background:#2d3748;}\n  .ab-title{font-size:1.1em;font-weight:bold;color:#fff;margin-bottom:4px;}\n  .ab-time{font-size:0.92em;color:#ffcdd2;margin-top:4px;}\n  .ab-sub{font-size:0.8em;color:#aaa;margin-top:10px;border-top:1px solid rgba(255,255,255,0.15);padding-top:8px;}\n  .ab-badge{display:inline-block;background:#fff;color:#c0392b;border-radius:50%;width:24px;height:24px;line-height:24px;text-align:center;font-weight:bold;margin-right:6px;font-size:0.85em;}\n</style>\n<div class=\"ab\" ng-class=\"msg && msg.alert_text ? 'ab-active' : 'ab-idle'\">\n  <div ng-if=\"!msg || !msg.alert_text\" style=\"color:#666;font-size:0.95em;\">No alerts yet</div>\n  <div ng-if=\"msg && msg.alert_text\">\n    <div class=\"ab-title\">\n      <span class=\"ab-badge\">!</span>{{msg.alert_text}}\n    </div>\n    <div class=\"ab-time\">&#128337; {{msg.alert_time}}</div>\n  </div>\n  <div class=\"ab-sub\">\n    Session peaks this session: <strong style=\"color:#fff;\">{{msg && msg.peak_count || 0}}</strong>\n  </div>\n</div>\n",
+    "storeOutMessages": true,
+    "fwdInMessages": true,
+    "resendOnRefresh": true,
+    "templateScope": "local",
+    "x": 560,
+    "y": 340,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "ui_relay_switch",
+    "type": "ui_switch",
+    "z": "tab_group25",
+    "name": "Relay Override",
+    "label": "Relay Override",
+    "group": "ui_grp_ctrl",
+    "order": 1,
+    "width": "4",
+    "height": "1",
+    "passthru": false,
+    "decouple": false,
+    "topic": "",
+    "onvalue": "true",
+    "onvalueType": "bool",
+    "oncolor": "#27ae60",
+    "offvalue": "false",
+    "offvalueType": "bool",
+    "offcolor": "#e74c3c",
+    "animate": true,
+    "x": 130,
+    "y": 460,
+    "wires": [
+      [
+        "fn_relay_map"
+      ]
+    ]
+  },
+  {
+    "id": "fn_relay_map",
+    "type": "function",
+    "z": "tab_group25",
+    "name": "Bool to ON/OFF",
+    "func": "msg.payload = msg.payload ? 'ON' : 'OFF';\nreturn msg;",
+    "outputs": 1,
+    "x": 340,
+    "y": 460,
+    "wires": [
+      [
+        "mqtt_out_relay"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_out_relay",
+    "type": "mqtt out",
+    "z": "tab_group25",
+    "name": "Relay Command",
+    "topic": "commands/group25/peak/relay",
+    "qos": "0",
+    "retain": false,
+    "broker": "mqtt_broker_cfg",
+    "x": 560,
+    "y": 460,
+    "wires": []
+  },
+  {
+    "id": "ui_btn_sim_peak",
+    "type": "ui_button",
+    "z": "tab_group25",
+    "name": "Simulate Peak",
+    "group": "ui_grp_ctrl",
+    "order": 2,
+    "width": "4",
+    "height": "1",
+    "label": "Simulate Peak",
+    "bgcolor": "#e74c3c",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 520,
+    "wires": [
+      [
+        "fn_fake_peak"
+      ]
+    ]
+  },
+  {
+    "id": "fn_fake_peak",
+    "type": "function",
+    "z": "tab_group25",
+    "name": "Build Fake Alert",
+    "func": "msg.payload = JSON.stringify({\n  timestamp: new Date().toISOString(),\n  power_w:   2.75,\n  status:    'PEAK_DETECTED',\n  reason:    'simulated_demo',\n  group:     'group25'\n});\nreturn msg;",
+    "outputs": 1,
+    "x": 340,
+    "y": 520,
+    "wires": [
+      [
+        "mqtt_out_alert_sim"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_out_alert_sim",
+    "type": "mqtt out",
+    "z": "tab_group25",
+    "name": "Simulated Alert Out",
+    "topic": "alerts/group25/peak/status",
+    "qos": "0",
+    "retain": false,
+    "broker": "mqtt_broker_cfg",
+    "x": 570,
+    "y": 520,
     "wires": []
   }
 ]

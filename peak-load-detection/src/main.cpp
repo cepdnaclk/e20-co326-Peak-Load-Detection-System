@@ -1,4 +1,40 @@
+// ============================================================
+//  Peak Load Detection System — Group 25
+//  ESP32 main.cpp  (WiFi + MQTT edition)
+//
+//  Hardware:
+//    ACS712 5A  → GPIO34 (ADC)
+//    Relay      → GPIO26 (active-LOW)
+//    LED green  → GPIO15
+//    LED yellow → GPIO16
+//    LED red    → GPIO17
+//    Button     → GPIO18 (INPUT_PULLUP)
+//
+//  MQTT topics:
+//    Publish  → sensors/group25/peak/raw
+//    Subscribe← commands/group25/peak/relay
+// ============================================================
+
+// ---- Increase PubSubClient packet buffer before including ----
+#define MQTT_MAX_PACKET_SIZE 512
+
 #include <Arduino.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+
+// ---- WiFi Credentials ----
+const char* WIFI_SSID     = "Dialog 4G 182";
+const char* WIFI_PASSWORD = "2002@Ravindu";
+
+// ---- MQTT Broker ----
+const char* MQTT_BROKER = "broker.hivemq.com";
+const int   MQTT_PORT   = 1883;
+const char* CLIENT_ID   = "esp32-group25-peak";
+
+// ---- MQTT Topics ----
+const char* TOPIC_RAW   = "sensors/group25/peak/raw";
+const char* TOPIC_RELAY = "commands/group25/peak/relay";
 
 // ---- PINS ----
 #define ACS712_PIN    34
@@ -6,7 +42,7 @@
 #define LED_GREEN     15    // D15
 #define LED_YELLOW    16    // RX2
 #define LED_RED       17    // TX2
-#define BUTTON_PIN    18 
+#define BUTTON_PIN    18
 
 // ---- ACS712 CONFIG ----
 #define ACS712_SENSITIVITY  0.185f
@@ -22,7 +58,7 @@
 #define RELAY_RESTORE_MS    8000
 #define BUTTON_RAMP_MAX     2.5f    // Max watts added at full press
 #define BUTTON_RAMP_STEP    0.15f   // Watts added per loop cycle (every 2s)
-#define BUTTON_DECAY_STEP   0.10f   // Watts removed per loop cycle on release 
+#define BUTTON_DECAY_STEP   0.10f   // Watts removed per loop cycle on release
 
 // ---- DEMO MODES ----
 // 0 = Auto (sensor-driven)
@@ -37,9 +73,137 @@ float   windowBuf[WINDOW_SIZE];
 int     winIdx      = 0;
 int     winCount    = 0;
 bool    relayOn     = true;
-unsigned long relayTripTime = 0;
-unsigned long lastPrintTime = 0;
+unsigned long relayTripTime  = 0;
+unsigned long lastPrintTime  = 0;
+unsigned long lastMqttPub    = 0;
 float   buttonRampW = 0.0f;   // current simulated load from button
+
+// Latest sensor reading (shared between loop and MQTT publish)
+float   lastCurrentA = 0.0f;
+float   lastPowerW   = 0.0f;
+bool    lastButtonHeld = false;
+
+// ---- WiFi + MQTT clients ----
+WiFiClient   wifiClient;
+PubSubClient mqttClient(wifiClient);
+
+// ============================================================
+//  WiFi CONNECT
+// ============================================================
+void connectWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  Serial.print("[WiFi] Connecting to ");
+  Serial.print(WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int tries = 0;
+  while (WiFi.status() != WL_CONNECTED && tries < 30) {
+    delay(500);
+    Serial.print(".");
+    tries++;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println();
+    Serial.print("[WiFi] Connected! IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println();
+    Serial.println("[WiFi] Failed to connect — continuing without WiFi.");
+  }
+}
+
+// ============================================================
+//  MQTT CALLBACK (incoming relay commands from Python)
+// ============================================================
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+
+// Forward declare setRelay so mqttCallback can call it
+void setRelay(bool on, String reason);
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  // Build null-terminated string from payload
+  char msg[64] = {0};
+  unsigned int copyLen = (length < sizeof(msg) - 1) ? length : sizeof(msg) - 1;
+  memcpy(msg, payload, copyLen);
+  Serial.print("[MQTT] Message on ");
+  Serial.print(topic);
+  Serial.print(": ");
+  Serial.println(msg);
+
+  if (strcmp(topic, TOPIC_RELAY) == 0) {
+    if (strcmp(msg, "ON") == 0) {
+      setRelay(true, "MQTT command");
+      relayTripTime = 0;
+      // ---- Fix: update LEDs immediately, not waiting for next loop tick ----
+      updateLEDs(lastPowerW, false);   // relay restored → green
+    } else if (strcmp(msg, "OFF") == 0) {
+      setRelay(false, "MQTT command");
+      relayTripTime = millis();
+      // ---- Fix: update LEDs immediately, not waiting for next loop tick ----
+      updateLEDs(lastPowerW, true);    // relay tripped → red
+    }
+  }
+}
+
+// ============================================================
+//  MQTT CONNECT
+// ============================================================
+void connectMQTT() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (mqttClient.connected()) return;
+
+  Serial.print("[MQTT] Connecting to ");
+  Serial.print(MQTT_BROKER);
+  Serial.print(":");
+  Serial.println(MQTT_PORT);
+
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setCallback(mqttCallback);
+
+  int tries = 0;
+  while (!mqttClient.connected() && tries < 5) {
+    if (mqttClient.connect(CLIENT_ID)) {
+      Serial.println("[MQTT] Connected!");
+      mqttClient.subscribe(TOPIC_RELAY);
+      Serial.print("[MQTT] Subscribed to: ");
+      Serial.println(TOPIC_RELAY);
+    } else {
+      Serial.print("[MQTT] Failed (rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(") retrying...");
+      delay(2000);
+      tries++;
+    }
+  }
+}
+
+// ============================================================
+//  PUBLISH RAW SENSOR DATA
+// ============================================================
+void publishRawData(float powerW, float currentA, bool buttonHeld) {
+  if (!mqttClient.connected()) return;
+
+  StaticJsonDocument<256> doc;
+  doc["timestamp"]   = String(millis());
+  doc["power_w"]     = serialized(String(powerW, 3));
+  doc["current_a"]   = serialized(String(currentA, 4));
+  doc["voltage_v"]   = 5.0;
+  doc["button_held"] = buttonHeld;
+  doc["ramp_w"]      = serialized(String(buttonRampW, 3));
+  doc["relay_on"]    = relayOn;
+  doc["group"]       = "group25";
+
+  char buf[256];
+  size_t n = serializeJson(doc, buf);
+  bool ok = mqttClient.publish(TOPIC_RAW, buf, n);
+
+  Serial.print("[MQTT] Published to ");
+  Serial.print(TOPIC_RAW);
+  Serial.print(" (");
+  Serial.print(ok ? "OK" : "FAIL");
+  Serial.println(")");
+  Serial.print("       Payload: ");
+  Serial.println(buf);
+}
 
 // ============================================================
 //  READ SENSOR
@@ -99,9 +263,9 @@ void updateLEDs(float powerW, bool isPeak) {
   digitalWrite(LED_GREEN,  LOW);
   digitalWrite(LED_YELLOW, LOW);
   digitalWrite(LED_RED,    LOW);
-  if      (isPeak)                              digitalWrite(LED_RED,    HIGH);
-  else if (powerW > PEAK_THRESHOLD_W * 0.75f)  digitalWrite(LED_YELLOW, HIGH);
-  else                                          digitalWrite(LED_GREEN,  HIGH);
+  if      (isPeak)                               digitalWrite(LED_RED,    HIGH);
+  else if (powerW > PEAK_THRESHOLD_W * 0.867f)  digitalWrite(LED_YELLOW, HIGH);  // >1.3W
+  else                                           digitalWrite(LED_GREEN,  HIGH);
 }
 
 // ============================================================
@@ -136,53 +300,53 @@ void printMenu() {
 // ============================================================
 //  HANDLE SERIAL COMMANDS
 // ============================================================
-void handleSerial() {
+void handleSerialCommands() {
   if (!Serial.available()) return;
 
-  char cmd = toupper(Serial.read());
+  String cmd = Serial.readStringUntil('\n');
+  cmd.trim();
+  cmd.toUpperCase();
 
-  switch (cmd) {
-    case 'A':
-      demoMode   = 0;
-      demoOffset = 0.0f;
-      winIdx = 0; winCount = 0;  // Reset window for clean auto detection
-      Serial.println(">> AUTO MODE — using real ACS712 sensor readings");
-      break;
+  // Demo mode commands
+  if (cmd == "AUTO" || cmd == "A") {
+    demoMode   = 0;
+    demoOffset = 0.0f;
+    winIdx = 0; winCount = 0;
+    Serial.println(">> AUTO MODE — using real ACS712 sensor readings");
+  }
+  else if (cmd == "NORMAL" || cmd == "N") {
+    demoMode   = 1;
+    demoOffset = 0.0f;
+    Serial.println(">> NORMAL MODE — forcing green LED, relay ON");
+  }
+  else if (cmd == "WARNING" || cmd == "W") {
+    demoMode   = 2;
+    demoOffset = PEAK_THRESHOLD_W * 0.85f;
+    Serial.println(">> WARNING MODE — forcing yellow LED");
+  }
+  else if (cmd == "PEAK" || cmd == "P") {
+    demoMode   = 3;
+    demoOffset = PEAK_THRESHOLD_W * 2.0f;
+    Serial.println(">> PEAK MODE — forcing peak detection + relay trip + red LED");
+  }
 
-    case 'N':
-      demoMode   = 1;
-      demoOffset = 0.0f;
-      Serial.println(">> NORMAL MODE — forcing green LED, relay ON");
-      setRelay(true, "Demo: normal mode");
-      break;
-
-    case 'W':
-      demoMode   = 2;
-      demoOffset = PEAK_THRESHOLD_W * 0.85f;  // just below threshold
-      Serial.println(">> WARNING MODE — forcing yellow LED");
-      break;
-
-    case 'P':
-      demoMode   = 3;
-      demoOffset = PEAK_THRESHOLD_W * 2.0f;   // well above threshold
-      Serial.println(">> PEAK MODE — forcing peak detection + relay trip + red LED");
-      break;
-
-    case 'R':
-      demoMode   = 0;
-      demoOffset = 0.0f;
-      setRelay(true, "Manual restore");
+  // Legacy serial relay commands (kept for backward compat)
+  else if (cmd == "RELAY_ON") {
+    if (!relayOn) {
+      setRelay(true, "Serial command");
       relayTripTime = 0;
-      winIdx = 0; winCount = 0;
-      Serial.println(">> RELAY RESTORED — back to auto mode");
-      break;
+    }
+  }
+  else if (cmd == "RELAY_OFF") {
+    if (relayOn) {
+      setRelay(false, "Serial command");
+      relayTripTime = millis();
+    }
+  }
 
-    case 'M':
-      printMenu();
-      break;
-
-    default:
-      break;
+  // Menu
+  else if (cmd == "MENU" || cmd == "M" || cmd == "HELP") {
+    printMenu();
   }
 }
 
@@ -192,6 +356,7 @@ void handleSerial() {
 void setup() {
   Serial.begin(115200);
 
+  // Relay: set safe state before configuring pin
   digitalWrite(RELAY_PIN, HIGH);   // OFF before pinMode (active-low)
   pinMode(RELAY_PIN,  OUTPUT);
   digitalWrite(RELAY_PIN, HIGH);
@@ -205,22 +370,37 @@ void setup() {
   analogSetAttenuation(ADC_11db);
 
   digitalWrite(LED_GREEN, HIGH);   // Start green
-  delay(1000);
+  delay(500);
   setRelay(true, "Startup");
 
   Serial.println("============================================");
   Serial.println("  Peak Load Detection System — Group 25");
-  Serial.println("  DEMO MODE ENABLED");
+  Serial.println("  WiFi + MQTT Edition");
   Serial.println("============================================");
   printMenu();
+
+  // WiFi + MQTT init
+  connectWiFi();
+  connectMQTT();
 }
 
 // ============================================================
 //  LOOP
 // ============================================================
 void loop() {
-  handleSerial();
+  // ---- Handle WiFi / MQTT reconnection ----
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
+  if (!mqttClient.connected()) {
+    connectMQTT();
+  }
+  mqttClient.loop();   // Process incoming MQTT messages
 
+  // ---- Handle serial commands ----
+  handleSerialCommands();
+
+  // ---- 2-second publish cycle ----
   unsigned long now = millis();
   if (now - lastPrintTime < 2000) return;
   lastPrintTime = now;
@@ -229,7 +409,7 @@ void loop() {
   float current = readCurrentAmps();
   float powerW  = calcPower(current);
 
-  // ---- BUTTON RAMP ----
+  // ---- BUTTON RAMP (optional simulation) ----
   bool buttonHeld = (digitalRead(BUTTON_PIN) == LOW);
   if (buttonHeld) {
     buttonRampW += BUTTON_RAMP_STEP;
@@ -240,71 +420,43 @@ void loop() {
   }
   powerW += buttonRampW;
 
-  float displayPower = powerW + demoOffset;
-  bool  isPeak  = false;
-  String status;
+  // ---- Apply demo mode offset ----
+  powerW += demoOffset;
 
-  if (demoMode == 1) {
-    isPeak = false;
-    status = "NORMAL (demo)";
-    updateLEDs(0.0f, false);
-
-  } else if (demoMode == 2) {
-    isPeak = false;
-    status = "WARNING (demo)";
+  // ---- Update LEDs based on relay + power level ----
+  if (!relayOn) {
+    digitalWrite(LED_GREEN,  LOW);
+    digitalWrite(LED_YELLOW, LOW);
+    digitalWrite(LED_RED,    HIGH);
+  }
+  else if (powerW > PEAK_THRESHOLD_W * 0.867f) {
     digitalWrite(LED_GREEN,  LOW);
     digitalWrite(LED_YELLOW, HIGH);
     digitalWrite(LED_RED,    LOW);
-
-  } else if (demoMode == 3) {
-    isPeak = true;
-    status = "PEAK DETECTED (demo)";
-    updateLEDs(displayPower, true);
-    if (relayOn) {
-      setRelay(false, "Demo: forced peak");
-      relayTripTime = now;
-    }
-
-  } else {
-    // AUTO mode — real sensor + button
-    status = detectPeak(displayPower, isPeak);
-    updateLEDs(displayPower, isPeak);
-
-    if (isPeak && relayOn) {
-      setRelay(false, "Peak detected — " + status);
-      relayTripTime = now;
-    }
-    if (!relayOn && !isPeak) {
-      if (relayTripTime > 0 && (now - relayTripTime > RELAY_RESTORE_MS)) {
-        setRelay(true, "Auto-restore after peak cleared");
-        relayTripTime = 0;
-      }
-    }
-    if (isPeak) relayTripTime = now;
+  }
+  else {
+    digitalWrite(LED_GREEN,  HIGH);
+    digitalWrite(LED_YELLOW, LOW);
+    digitalWrite(LED_RED,    LOW);
   }
 
-  // Print readings
-  Serial.println("--------------------------------------------");
-  Serial.print  ("  Button  : ");
-  Serial.println(buttonHeld ? "HELD" : "open");
-  Serial.print  ("  Ramp    : "); Serial.print(buttonRampW, 2); Serial.println(" W added");
-  Serial.print  ("  Power   : "); Serial.print(displayPower, 3); Serial.println(" W");
-  Serial.print  ("  Current : "); Serial.print(current, 3);      Serial.println(" A");
-  Serial.print  ("  Status  : "); Serial.println(status);
-  Serial.print  ("  Relay   : "); Serial.println(relayOn ? "ON  (fan running)" : "OFF (fan stopped)");
-  Serial.println("--------------------------------------------");
-  
-  // Parseable JSON output for Python reader
-  Serial.print("[POWER] Power: ");
-  Serial.print(displayPower, 2);
-  Serial.print(" W | State: ");
-  if (isPeak) {
-    Serial.print("PEAK");
-  } else if (displayPower > PEAK_THRESHOLD_W * 0.75f) {
-    Serial.print("WARNING");
-  } else {
-    Serial.print("NORMAL");
-  }
-  Serial.print(" | Relay: ");
+  // ---- Serial debug output (preserved) ----
+  Serial.print("[SENSOR] Current: ");
+  Serial.print(current, 3);
+  Serial.print(" A | Power: ");
+  Serial.print(powerW, 2);
+  Serial.print(" W | Button: ");
+  Serial.print(buttonHeld ? "HELD" : "free");
+  Serial.print(" | Ramp: ");
+  Serial.print(buttonRampW, 2);
+  Serial.print(" W | Relay: ");
   Serial.println(relayOn ? "ON" : "OFF");
+
+  // ---- Publish raw sensor data via MQTT ----
+  publishRawData(powerW, current, buttonHeld);
+
+  // ---- Cache latest values ----
+  lastCurrentA   = current;
+  lastPowerW     = powerW;
+  lastButtonHeld = buttonHeld;
 }
