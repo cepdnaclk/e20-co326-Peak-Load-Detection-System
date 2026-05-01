@@ -98,6 +98,50 @@ services:
     networks:
       - peak_net
 
+  # ─────────────────────────────────────────────────────────
+  #  Container 4: InfluxDB (Time-series Historian)
+  #  Stores all sensor data and alerts for the Digital Twin
+  # ─────────────────────────────────────────────────────────
+  influxdb:
+    image: influxdb:2.7
+    container_name: group25-influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./influxdb/data:/var/lib/influxdb2
+      - ./influxdb/config:/etc/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=group25
+      - DOCKER_INFLUXDB_INIT_BUCKET=peak_load
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=peak-token-group25
+    restart: unless-stopped
+    networks:
+      - peak_net
+
+  # ─────────────────────────────────────────────────────────
+  #  Container 5: Grafana (Digital Twin Dashboard)
+  #  Visualizes historical trends and peaks
+  # ─────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: group25-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+    networks:
+      - peak_net
+
 # ─────────────────────────────────────────────────────────────
 #  Internal docker network — containers talk to each other
 #  using service names (mqtt-broker, edge-ai, node-red)

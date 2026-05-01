@@ -3,3 +3,5 @@ numpy>=2.0.0
 pyserial
 scikit-learn
 joblib
+influxdb-client>=1.36.0
+
