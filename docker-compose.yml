@@ -32,6 +32,12 @@ services:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t \"health/check\" -m \"ping\" >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
     networks:
       - peak_net
@@ -44,16 +50,24 @@ services:
   edge-ai:
     build: ./python
     container_name: group25-edge-ai
+    env_file:
+      - .env
     environment:
-      MQTT_HOST: mqtt-broker          # Docker service name (internal DNS)
-      MQTT_PORT: "1883"
-      GROUP_ID: "group25"
-      PROJECT_ID: "peak"
-      PEAK_THRESHOLD_W: "1.5"         # Trip relay above 1.5W
-      WARNING_RATIO: "0.867"          # Warning above 1.3W (86.7% of 1.5W)
-      RELAY_RESTORE_DELAY_S: "8"      # Seconds before relay auto-restores
+      MQTT_HOST: "${MQTT_HOST:-mqtt-broker}"          # Docker service name (internal DNS)
+      MQTT_PORT: "${MQTT_PORT:-1883}"
+      GROUP_ID: "${GROUP_ID:-group25}"
+      PROJECT_ID: "${PROJECT_ID:-peak}"
+      PEAK_THRESHOLD_W: "${PEAK_THRESHOLD_W:-1.5}"
+      WARNING_RATIO: "${WARNING_RATIO:-0.867}"
+      RELAY_RESTORE_DELAY_S: "${RELAY_RESTORE_DELAY_S:-8}"
     depends_on:
       - mqtt-broker
+    healthcheck:
+      test: ["CMD-SHELL", "python /app/healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
     networks:
       - peak_net
@@ -74,6 +88,12 @@ services:
       TZ: "Asia/Colombo"              # Local time for alert timestamps (UTC+5:30)
     depends_on:
       - mqtt-broker
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:1880/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
     networks:
       - peak_net
