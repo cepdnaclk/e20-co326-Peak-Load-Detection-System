@@ -19,6 +19,8 @@ import threading
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 from edge_ai import detect_peak
 
@@ -32,6 +34,14 @@ PROJECT_ID          = os.environ.get("PROJECT_ID",           "peak")
 PEAK_THRESHOLD_W    = float(os.environ.get("PEAK_THRESHOLD_W",   "1.5"))
 WARNING_RATIO       = float(os.environ.get("WARNING_RATIO",       "0.75"))
 RELAY_RESTORE_DELAY = float(os.environ.get("RELAY_RESTORE_DELAY_S", "8"))
+
+INFLUXDB_URL    = os.environ.get("INFLUXDB_URL", "http://influxdb:8086")
+INFLUXDB_TOKEN  = os.environ.get("INFLUXDB_TOKEN", "peak-token-group25")
+INFLUXDB_ORG    = os.environ.get("INFLUXDB_ORG", "group25")
+INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "peak_load")
+
+_influx_client = None
+_write_api = None
 
 # Derived thresholds
 WARNING_THRESHOLD_W = PEAK_THRESHOLD_W * WARNING_RATIO  # 1.125 W
@@ -145,20 +155,49 @@ def on_message(client: mqtt.Client, userdata, msg: mqtt.MQTTMessage) -> None:
     }
     publish(client, TOPIC_DATA, data_payload, "DATA")
 
+    # ---- Write to InfluxDB ----
+    if _write_api:
+        try:
+            point = Point("peak_data") \
+                .tag("group", GROUP_ID) \
+                .tag("status", status) \
+                .field("power_w", float(power_w)) \
+                .field("current_a", float(current_a)) \
+                .field("voltage_v", float(voltage_v)) \
+                .field("relay_on", int(relay_on)) \
+                .time(datetime.now(timezone.utc), WritePrecision.MS)
+            _write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
+        except Exception as e:
+            print(f"[WARN] InfluxDB write failed: {e}")
+
     # ---- Handle PEAK logic ----
     if is_peak:
         if not _peak_active:
             _peak_active = True
 
             # Publish alert
+            reason_str = state.lower().replace(" + ", "_and_").replace(" ", "_")
             alert_payload = {
                 "timestamp": ts,
                 "power_w":   round(power_w, 3),
                 "status":    "PEAK_DETECTED",
-                "reason":    state.lower().replace(" + ", "_and_").replace(" ", "_"),
+                "reason":    reason_str,
                 "group":     GROUP_ID,
             }
             publish(client, TOPIC_ALERT, alert_payload, "ALERT")
+
+            # Write alert to InfluxDB
+            if _write_api:
+                try:
+                    point = Point("peak_alert") \
+                        .tag("group", GROUP_ID) \
+                        .tag("status", "PEAK_DETECTED") \
+                        .tag("reason", reason_str) \
+                        .field("power_w", float(power_w)) \
+                        .time(datetime.now(timezone.utc), WritePrecision.MS)
+                    _write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
+                except Exception as e:
+                    print(f"[WARN] InfluxDB alert write failed: {e}")
 
             # Trip relay if it is currently on
             if relay_on:
@@ -197,6 +236,15 @@ def main() -> None:
     client.on_connect    = on_connect
     client.on_disconnect = on_disconnect
     client.on_message    = on_message
+
+    # ---- Setup InfluxDB ----
+    global _influx_client, _write_api
+    try:
+        _influx_client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG)
+        _write_api = _influx_client.write_api(write_options=SYNCHRONOUS)
+        print(f"[INFLUXDB] Connected to {INFLUXDB_URL} (bucket={INFLUXDB_BUCKET})")
+    except Exception as e:
+        print(f"[WARN] InfluxDB init failed: {e}")
 
     # ---- Connect with retry ----
     while True:

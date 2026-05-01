@@ -1,3 +1,4 @@
 paho-mqtt>=2.0.0
 numpy>=2.0.0
 pyserial
+influxdb-client>=1.36.0
