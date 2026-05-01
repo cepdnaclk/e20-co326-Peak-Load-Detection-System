@@ -111,7 +111,7 @@
       "type": "stat",
       "targets": [
         {
-          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> last()",
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> group()\n  |> sort(columns: [\"_time\"])\n  |> last()",
           "refId": "A"
         }
       ]
@@ -253,7 +253,7 @@
       "type": "stat",
       "targets": [
         {
-          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> last()",
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> group()\n  |> sort(columns: [\"_time\"])\n  |> last()",
           "refId": "A"
         }
       ]
