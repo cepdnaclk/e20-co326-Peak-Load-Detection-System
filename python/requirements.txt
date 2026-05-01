@@ -1,4 +1,5 @@
 paho-mqtt
 numpy
 pyserial
-
+scikit-learn
+joblib
