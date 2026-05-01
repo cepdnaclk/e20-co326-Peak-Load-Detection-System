@@ -6,7 +6,7 @@ import paho.mqtt.client as mqtt
 
 from sensor_reader import SensorReader
 from simulator import get_sensor_payload
-from edge_ai import detect_peak
+from edge_ai import detect_peak_full
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
@@ -69,16 +69,18 @@ def main():
             print(f"[DATA] {payload}")
 
             # Check for peak and send alert (with cooldown to avoid spam)
-            is_peak = payload.get("is_peak", False) or detect_peak(payload["power_kw"])
+            detection = detect_peak_full(payload["power_kw"])
+            is_peak = payload.get("is_peak", False) or detection.is_peak
             if is_peak and (time.time() - last_alert_time) > alert_cooldown:
                 alert_payload = {
                     "timestamp": payload["timestamp"],
                     "power_kw": payload["power_kw"],
                     "power_w": payload.get("power_w", payload["power_kw"] * 1000),
                     "status": "PEAK_DETECTED",
-                    "reason": payload.get("state", "threshold_or_zscore"),
+                    "reason": detection.reason or payload.get("state", "unknown"),
                     "group": GROUP_ID,
                     "project": PROJECT_ID,
+                    "ml_details": detection.to_dict(),
                 }
                 client.publish(ALERT_TOPIC, json.dumps(alert_payload))
                 print(f"[ALERT] {alert_payload}")
