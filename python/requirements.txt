@@ -4,4 +4,6 @@ pyserial
 scikit-learn
 joblib
 influxdb-client>=1.36.0
+python-dotenv
+
 

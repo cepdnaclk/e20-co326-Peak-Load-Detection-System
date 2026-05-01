@@ -1,0 +1,547 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "⚡ Real-Time Monitoring",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#27ae60", "value": null },
+              { "color": "#f39c12", "value": 1.5 },
+              { "color": "#e74c3c", "value": 2.0 }
+            ]
+          },
+          "unit": "watt",
+          "min": 0,
+          "max": 3
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 5, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "title": "Current Power Load",
+      "type": "gauge",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#27ae60", "value": null },
+              { "color": "#f39c12", "value": 1.5 },
+              { "color": "#e74c3c", "value": 2.0 }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 0,   "to": 1.4999, "result": { "text": "🟢 NORMAL",  "color": "#27ae60", "index": 0 }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 1.5, "to": 1.9999, "result": { "text": "🟡 WARNING", "color": "#f39c12", "index": 1 }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 2.0, "to": 999,    "result": { "text": "🔴 PEAK",    "color": "#e74c3c", "index": 2 }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 4, "x": 5, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "title": "System Status",
+      "type": "stat",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#e74c3c", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 4, "x": 9, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "🚨 Total Peaks Detected",
+      "type": "stat",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"peak_alerts\" and r._field == \"alert\")\n  |> count()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#3498db", "value": null }
+            ]
+          },
+          "unit": "amp"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 3, "x": 5, "y": 4 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Current Draw",
+      "type": "stat",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"current_a\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#9b59b6", "value": null }
+            ]
+          },
+          "unit": "volt"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 3, "x": 8, "y": 4 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Voltage",
+      "type": "stat",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"voltage_v\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#27ae60", "value": null },
+              { "color": "#e74c3c", "value": 2.0 }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": { "from": 0, "to": 1.9999, "result": { "text": "🟢 ON",      "color": "#27ae60", "index": 0 } }
+            },
+            {
+              "type": "range",
+              "options": { "from": 2.0, "to": 999,  "result": { "text": "🔴 TRIPPED", "color": "#e74c3c", "index": 1 } }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 2, "x": 11, "y": 1 },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "title": "Relay",
+      "type": "stat",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 4,
+            "axisCenteredZero": false,
+            "axisLabel": "Power (W)",
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": { "mode": "dashed+area" }
+          },
+          "color": { "mode": "continuous-GrYlRd" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "#f39c12", "value": 1.5 },
+              { "color": "red", "value": 2.0 }
+            ]
+          },
+          "unit": "watt",
+          "min": 0,
+          "max": 3
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 13, "x": 0, "y": 7 },
+      "id": 7,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "title": "⚡ Power Load Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 3,
+            "axisLabel": "Current (A)"
+          },
+          "color": { "fixedColor": "#3498db", "mode": "fixed" },
+          "unit": "amp",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 11, "x": 13, "y": 7 },
+      "id": 8,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "title": "🔌 Current Draw Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"current_a\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 101,
+      "title": "🚨 Peak Detection Events",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "points",
+            "pointSize": 10,
+            "showPoints": "always",
+            "axisLabel": "Peak Power (W)"
+          },
+          "color": { "fixedColor": "#e74c3c", "mode": "fixed" },
+          "unit": "watt"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 13, "x": 0, "y": 16 },
+      "id": 9,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "title": "🚨 Peak Events Timeline",
+      "type": "timeseries",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"peak_alerts\" and r._field == \"power_w\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "displayMode": "auto", "filterable": true },
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2.0 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "_time" },
+            "properties": [{ "id": "displayName", "value": "Time" }, { "id": "custom.width", "value": 200 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "power_w" },
+            "properties": [{ "id": "displayName", "value": "Power (W)" }, { "id": "unit", "value": "watt" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "reason" },
+            "properties": [{ "id": "displayName", "value": "Detection Method" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 7, "w": 11, "x": 13, "y": 16 },
+      "id": 10,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Time" }],
+        "footer": { "show": false }
+      },
+      "title": "📋 Recent Peak Alerts",
+      "type": "table",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"peak_alerts\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)\n  |> keep(columns: [\"_time\", \"power_w\", \"reason\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 102,
+      "title": "📊 Analytics",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "fillOpacity": 80,
+            "gradientMode": "hue",
+            "lineWidth": 1
+          },
+          "color": { "mode": "palette-classic" },
+          "unit": "watt"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 24 },
+      "id": 11,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max", "min"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "📊 Power Distribution (5-min avg)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "NORMAL" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#27ae60", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "WARNING" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#f39c12", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "PEAK" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#e74c3c", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 24 },
+      "id": 12,
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "pieType": "donut",
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "table", "placement": "right", "values": ["percent"] }
+      },
+      "title": "📈 Status Distribution",
+      "type": "piechart",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"power_w\")\n  |> group(columns: [\"status\"])\n  |> count()\n  |> group()\n  |> rename(columns: {status: \"_field\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity"
+          },
+          "color": { "fixedColor": "#e67e22", "mode": "fixed" },
+          "unit": "watt"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 24 },
+      "id": 13,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "title": "🔘 Button Ramp Power",
+      "type": "timeseries",
+      "targets": [
+        {
+          "query": "from(bucket: \"peak_load\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"power_data\" and r._field == \"ramp_w\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["peak-load", "group25", "co326"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "Asia/Colombo",
+  "title": "Peak Load Detection — Group 25",
+  "uid": "peak-load-group25",
+  "version": 1
+}

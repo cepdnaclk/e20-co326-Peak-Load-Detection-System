@@ -1,33 +1,34 @@
-version: '3.8'
+# docker-compose.yml
 
 # =============================================================
 #  Peak Load Detection System — Group 25
 #  CO326: Computer Systems Engineering — Industrial Networks
 #
-#  Three-Container Architecture:
+#  Four-Container Architecture:
 #    Container 1: Eclipse Mosquitto (MQTT Broker)
-#    Container 2: Python Edge AI Bridge
-#    Container 3: Node-RED Dashboard
+#    Container 2: Node-RED Dashboard  (real-time visualization)
+#    Container 3: InfluxDB 2.x        (time-series storage)
+#    Container 4: Grafana             (historical dashboards)
 #
-#  Note on ESP32:
-#    The ESP32 is a physical device on the LAN. It must connect
-#    to the HOST machine IP (not the docker service name).
-#    Change MQTT_BROKER in main.cpp to your host IP before flashing.
-#    e.g. const char* MQTT_BROKER = "192.168.1.100";
+#  The Python Edge AI runs on the HOST (not in Docker) because
+#  it needs serial USB access to the ESP32.
+#
+#  Run:  docker compose up
+#  Then: python python/mqtt_publisher.py   (on host)
 # =============================================================
 
 services:
 
   # ─────────────────────────────────────────────────────────
   #  Container 1: Eclipse Mosquitto MQTT Broker
-  #  Replaces the public HiveMQ broker with a local one.
-  #  Exposes port 1883 to the host so the ESP32 can reach it.
+  #  Central message bus — all data flows through here.
+  #  Exposed on port 1883 so the host Python script can connect.
   # ─────────────────────────────────────────────────────────
   mqtt-broker:
     image: eclipse-mosquitto:2
     container_name: group25-mqtt-broker
     ports:
-      - "1883:1883"       # ESP32 and external clients connect here
+      - "1884:1883"       # External 1884 → internal 1883 (avoid local Mosquitto conflict)
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
@@ -43,49 +44,20 @@ services:
       - peak_net
 
   # ─────────────────────────────────────────────────────────
-  #  Container 2: Python Edge AI Bridge
-  #  Subscribes to raw ESP32 sensor data, runs Z-score + 
-  #  threshold detection, publishes alerts and relay commands.
-  # ─────────────────────────────────────────────────────────
-  edge-ai:
-    build: ./python
-    container_name: group25-edge-ai
-    env_file:
-      - .env
-    environment:
-      MQTT_HOST: "${MQTT_HOST:-mqtt-broker}"          # Docker service name (internal DNS)
-      MQTT_PORT: "${MQTT_PORT:-1883}"
-      GROUP_ID: "${GROUP_ID:-group25}"
-      PROJECT_ID: "${PROJECT_ID:-peak}"
-      PEAK_THRESHOLD_W: "${PEAK_THRESHOLD_W:-1.5}"
-      WARNING_RATIO: "${WARNING_RATIO:-0.867}"
-      RELAY_RESTORE_DELAY_S: "${RELAY_RESTORE_DELAY_S:-8}"
-    depends_on:
-      - mqtt-broker
-    healthcheck:
-      test: ["CMD-SHELL", "python /app/healthcheck.py"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-    restart: unless-stopped
-    networks:
-      - peak_net
-
-  # ─────────────────────────────────────────────────────────
-  #  Container 3: Node-RED Dashboard
-  #  Visualises real-time power, fan animation, chart,
-  #  alerts and manual relay controls.
+  #  Container 2: Node-RED Dashboard
+  #  Real-time visualization: gauge, chart, fan animation,
+  #  alert panel, and manual relay controls.
+  #  Dashboard: http://localhost:1880/ui
   # ─────────────────────────────────────────────────────────
   node-red:
     image: nodered/node-red:latest
     container_name: group25-node-red
     ports:
-      - "1880:1880"                   # Dashboard: http://localhost:1880/ui
+      - "1880:1880"
     volumes:
-      - ./node-red:/data              # Persists flows.json and settings
+      - ./node-red:/data
     environment:
-      TZ: "Asia/Colombo"              # Local time for alert timestamps (UTC+5:30)
+      TZ: "Asia/Colombo"
     depends_on:
       - mqtt-broker
     healthcheck:
@@ -99,52 +71,76 @@ services:
       - peak_net
 
   # ─────────────────────────────────────────────────────────
-  #  Container 4: InfluxDB (Time-series Historian)
-  #  Stores all sensor data and alerts for the Digital Twin
+  #  Container 3: InfluxDB 2.x (Time-Series Database)
+  #  Stores all sensor readings and peak detection events
+  #  for historical analysis via Grafana dashboards.
+  #  Admin UI: http://localhost:8086
   # ─────────────────────────────────────────────────────────
   influxdb:
-    image: influxdb:2.7
+    image: influxdb:2
     container_name: group25-influxdb
     ports:
       - "8086:8086"
-    volumes:
-      - ./influxdb/data:/var/lib/influxdb2
-      - ./influxdb/config:/etc/influxdb2
     environment:
-      - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
-      - DOCKER_INFLUXDB_INIT_ORG=group25
-      - DOCKER_INFLUXDB_INIT_BUCKET=peak_load
-      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=peak-token-group25
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: admin12345
+      DOCKER_INFLUXDB_INIT_ORG: group25
+      DOCKER_INFLUXDB_INIT_BUCKET: peak_load
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: peak-token-group25
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
     networks:
       - peak_net
 
   # ─────────────────────────────────────────────────────────
-  #  Container 5: Grafana (Digital Twin Dashboard)
-  #  Visualizes historical trends and peaks
+  #  Container 4: Grafana (Historical Dashboard)
+  #  Connects to InfluxDB for time-series visualization.
+  #  Pre-provisioned with datasource and dashboard.
+  #  Dashboard: http://localhost:3000  (admin/admin)
   # ─────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
     container_name: group25-grafana
     ports:
       - "3000:3000"
-    volumes:
-      - ./grafana/data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/peak_load_dashboard.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - influxdb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
     networks:
       - peak_net
 
 # ─────────────────────────────────────────────────────────────
-#  Internal docker network — containers talk to each other
-#  using service names (mqtt-broker, edge-ai, node-red)
+#  Docker volumes for persistent data
+# ─────────────────────────────────────────────────────────────
+volumes:
+  influxdb_data:
+  grafana_data:
+
+# ─────────────────────────────────────────────────────────────
+#  Internal docker network
 # ─────────────────────────────────────────────────────────────
 networks:
   peak_net:
