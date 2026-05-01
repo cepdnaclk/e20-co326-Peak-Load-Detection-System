@@ -1,161 +1,57 @@
 {
-  "model_path": "C:\\Users\\PasinduMalshan\\Downloads\\CO326\\e20-co326-Peak-Load-Detection-System\\python\\ml\\isolation_forest.pkl",
-  "scenarios": {
-    "Balanced (10% peaks)": {
-      "Isolation Forest": {
-        "TP": 123,
-        "FP": 44,
-        "TN": 1763,
-        "FN": 70,
-        "Precision": 0.7365,
-        "Recall": 0.6373,
-        "F1": 0.6833,
-        "Accuracy": 0.943
-      },
-      "Fixed Threshold 600kW": {
-        "TP": 193,
-        "FP": 0,
-        "TN": 1807,
-        "FN": 0,
-        "Precision": 1.0,
-        "Recall": 1.0,
-        "F1": 1.0,
-        "Accuracy": 1.0
-      },
-      "Rolling Z-Score (z>2.5)": {
-        "TP": 193,
-        "FP": 2,
-        "TN": 1805,
-        "FN": 0,
-        "Precision": 0.9897,
-        "Recall": 1.0,
-        "F1": 0.9948,
-        "Accuracy": 0.999
-      },
-      "Ensemble OR  (any trigger)": {
-        "TP": 193,
-        "FP": 46,
-        "TN": 1761,
-        "FN": 0,
-        "Precision": 0.8075,
-        "Recall": 1.0,
-        "F1": 0.8935,
-        "Accuracy": 0.977
-      },
-      "Ensemble MAJ (2-of-3 vote)": {
-        "TP": 193,
-        "FP": 0,
-        "TN": 1807,
-        "FN": 0,
-        "Precision": 1.0,
-        "Recall": 1.0,
-        "F1": 1.0,
-        "Accuracy": 1.0
-      }
+  "n_test_samples": 2000,
+  "peak_injection_rate": 0.1,
+  "peak_threshold_kw": 600.0,
+  "detectors": {
+    "Isolation Forest": {
+      "TP": 233,
+      "FP": 601,
+      "TN": 1166,
+      "FN": 0,
+      "Precision": 0.2794,
+      "Recall": 1.0,
+      "F1": 0.4367,
+      "Accuracy": 0.6995
     },
-    "Rare events (2% peaks)": {
-      "Isolation Forest": {
-        "TP": 23,
-        "FP": 27,
-        "TN": 1926,
-        "FN": 24,
-        "Precision": 0.46,
-        "Recall": 0.4894,
-        "F1": 0.4742,
-        "Accuracy": 0.9745
-      },
-      "Fixed Threshold 600kW": {
-        "TP": 47,
-        "FP": 0,
-        "TN": 1953,
-        "FN": 0,
-        "Precision": 1.0,
-        "Recall": 1.0,
-        "F1": 1.0,
-        "Accuracy": 1.0
-      },
-      "Rolling Z-Score (z>2.5)": {
-        "TP": 47,
-        "FP": 15,
-        "TN": 1938,
-        "FN": 0,
-        "Precision": 0.7581,
-        "Recall": 1.0,
-        "F1": 0.8624,
-        "Accuracy": 0.9925
-      },
-      "Ensemble OR  (any trigger)": {
-        "TP": 47,
-        "FP": 42,
-        "TN": 1911,
-        "FN": 0,
-        "Precision": 0.5281,
-        "Recall": 1.0,
-        "F1": 0.6912,
-        "Accuracy": 0.979
-      },
-      "Ensemble MAJ (2-of-3 vote)": {
-        "TP": 47,
-        "FP": 0,
-        "TN": 1953,
-        "FN": 0,
-        "Precision": 1.0,
-        "Recall": 1.0,
-        "F1": 1.0,
-        "Accuracy": 1.0
-      }
+    "Fixed Threshold (600 kW)": {
+      "TP": 232,
+      "FP": 0,
+      "TN": 1767,
+      "FN": 1,
+      "Precision": 1.0,
+      "Recall": 0.9957,
+      "F1": 0.9978,
+      "Accuracy": 0.9995
     },
-    "High load (30% peaks)": {
-      "Isolation Forest": {
-        "TP": 614,
-        "FP": 1242,
-        "TN": 144,
-        "FN": 0,
-        "Precision": 0.3308,
-        "Recall": 1.0,
-        "F1": 0.4972,
-        "Accuracy": 0.379
-      },
-      "Fixed Threshold 600kW": {
-        "TP": 594,
-        "FP": 0,
-        "TN": 1386,
-        "FN": 20,
-        "Precision": 1.0,
-        "Recall": 0.9674,
-        "F1": 0.9834,
-        "Accuracy": 0.99
-      },
-      "Rolling Z-Score (z>2.5)": {
-        "TP": 613,
-        "FP": 0,
-        "TN": 1386,
-        "FN": 1,
-        "Precision": 1.0,
-        "Recall": 0.9984,
-        "F1": 0.9992,
-        "Accuracy": 0.9995
-      },
-      "Ensemble OR  (any trigger)": {
-        "TP": 614,
-        "FP": 1242,
-        "TN": 144,
-        "FN": 0,
-        "Precision": 0.3308,
-        "Recall": 1.0,
-        "F1": 0.4972,
-        "Accuracy": 0.379
-      },
-      "Ensemble MAJ (2-of-3 vote)": {
-        "TP": 614,
-        "FP": 0,
-        "TN": 1386,
-        "FN": 0,
-        "Precision": 1.0,
-        "Recall": 1.0,
-        "F1": 1.0,
-        "Accuracy": 1.0
-      }
+    "Rolling Z-Score (z>2.5)": {
+      "TP": 233,
+      "FP": 3,
+      "TN": 1764,
+      "FN": 0,
+      "Precision": 0.9873,
+      "Recall": 1.0,
+      "F1": 0.9936,
+      "Accuracy": 0.9985
+    },
+    "Ensemble OR  (any trigger)": {
+      "TP": 233,
+      "FP": 601,
+      "TN": 1166,
+      "FN": 0,
+      "Precision": 0.2794,
+      "Recall": 1.0,
+      "F1": 0.4367,
+      "Accuracy": 0.6995
+    },
+    "Ensemble MAJ (2-of-3 vote)": {
+      "TP": 233,
+      "FP": 3,
+      "TN": 1764,
+      "FN": 0,
+      "Precision": 0.9873,
+      "Recall": 1.0,
+      "F1": 0.9936,
+      "Accuracy": 0.9985
     }
   }
 }
