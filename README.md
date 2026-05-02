@@ -1,4 +1,14 @@
-# Peak Load Detection System — Group 25
+# Peak Load Detection System — Group 24
+
+![ESP32](https://img.shields.io/badge/ESP32-000000?style=flat-square&logo=espressif&logoColor=white)
+![C++](https://img.shields.io/badge/C++-00599C?style=flat-square&logo=c%2B%2B&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Node-RED](https://img.shields.io/badge/Node--RED-8F0000?style=flat-square&logo=nodered&logoColor=white)
+![Mosquitto](https://img.shields.io/badge/Mosquitto-3C5280?style=flat-square&logo=eclipse-mosquitto&logoColor=white)
+![InfluxDB](https://img.shields.io/badge/InfluxDB-22ADF6?style=flat-square&logo=influxdb&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white)
+![Scikit-Learn](https://img.shields.io/badge/scikit--learn-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)
 
 An **Edge AI–based IoT system** that detects peak industrial power demand in real-time using an **ESP32 sensor node**, **Python Edge AI inference**, and **dual dashboards** (Node-RED for real-time monitoring + Grafana for historical analysis). Built for the CO326 Edge AI + Industrial IoT mini-project framework.
 
@@ -8,6 +18,48 @@ An **Edge AI–based IoT system** that detects peak industrial power demand in r
 - 📡 **MQTT-based architecture** — Decoupled, scalable messaging
 - ⚡ **No WiFi required** — Data flows via USB serial → Python → MQTT (local)
 - 🔧 **Fully configurable** — thresholds, polling rates, detection algorithms
+
+---
+
+## Dashboards & Hardware
+
+### Real-Time Monitoring (Node-RED)
+![Node-RED Dashboard](./docs/images/node_reddashboard.png)
+
+### Historical Analytics & Digital Twin (Grafana)
+![Grafana Historical Trends](./docs/images/grafana_dashboard1.png)
+![Grafana Alerts Log](./docs/images/grafana_dashboard2.png)
+
+### Hardware Implementation
+![Hardware Implementation](./docs/images/hrdware_implementations.png)
+
+---
+
+## Repository Structure
+
+```text
+e20-co326-Peak-Load-Detection-System/
+├── peak-load-detection/          # PlatformIO ESP32 project (C++ firmware)
+│   ├── src/main.cpp              # Sensor, MQTT, and Relay logic
+│   └── platformio.ini            # Build configuration
+├── python/                       # Edge AI module and Bridge
+│   ├── run_standalone.py         # Main bridge and orchestration script
+│   ├── edge_ai.py                # ML ensemble models (Isolation Forest, Z-score)
+│   ├── esp32_bridge.py           # Serial communication and parsing
+│   ├── influxdb_writer.py        # Time-series data insertion
+│   └── requirements.txt          # Python dependencies
+├── node-red/                     # Node-RED configurations
+│   └── flows.json                # Dashboard UI layout and nodes
+├── grafana/                      # Grafana configurations
+│   └── provisioning/             # Auto-provisioned dashboards and data sources
+├── influxdb/                     # InfluxDB data persistence volume mapping
+├── mosquitto/                    # MQTT Broker configurations
+│   └── config/mosquitto.conf     # Local broker settings
+├── docs/                         # Project Documentation and Images
+│   └── images/                   # Screenshots and diagrams
+├── docker-compose.yml            # Four-container infrastructure orchestration
+└── README.md                     # Project documentation
+```
 
 ---
 
